@@ -1,0 +1,228 @@
+\documentclass[10pt,twocolumn,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english,portuguese]{babel}
+\usepackage[margin=1.8cm,top=2.0cm,bottom=2.0cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+\usepackage{hyperref}
+\usepackage{titlesec}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=blue!60!black,
+  urlcolor=blue!70!black,
+  pdftitle={Arquitetura Web para Monitoramento e Acionamento Remoto de Fechadura Inteligente com Modo Simulado e Integracao Tuya Cloud},
+  pdfauthor={Lemuel Cavalcante Lopes}
+}
+
+\setlength{\columnsep}{0.6cm}
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!40},
+  backgroundcolor=\color{gray!6},
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!45!black},
+  stringstyle=\color{orange!65!black},
+  showstringspaces=false,
+  tabsize=2
+}
+
+\title{\textbf{Arquitetura Web para Monitoramento e Acionamento Remoto de Fechadura Inteligente em Ambiente Acad\^emico com Modo Simulado e Integra\c{c}\~ao Tuya Cloud}}
+
+\author{
+  Lemuel Cavalcante Lopes \\
+  \small Universidade Federal do Piau\'i (UFPI) -- Laborat\'orio de Pesquisa \\
+  \small \texttt{lemu200011@gmail.com}
+}
+
+\date{Novembro de 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este artigo apresenta a concep\c{c}\~ao, a arquitetura e a implementa\c{c}\~ao inicial do sistema \texttt{tuya-lock-dashboard}, uma aplica\c{c}\~ao web destinada ao monitoramento de telemetria e ao acionamento remoto de uma fechadura inteligente integrada \`a plataforma Tuya Cloud em ambiente acad\^emico na Universidade Federal do Piau\'i (UFPI). Diante da necessidade de validar fluxos de interface e regras de neg\'ocio antes da conclus\~ao do v\'inculo da conta do aplicativo m\'ovel na plataforma Tuya IoT, adotou-se o padr\~ao de abstra\c{c}\~ao de servi\c{c}o por meio da interface \texttt{ILockService}, permitindo altern\^ancia transparente via vari\'avel de ambiente entre um simulador em mem\'oria (\texttt{USE\_MOCK=true}) e o cliente real da Tuya OpenAPI v2.0 (\texttt{USE\_MOCK=false}) com autentica\c{c}\~ao HMAC-SHA256. A solu\c{c}\~ao combina backend em Node.js, TypeScript e Express com frontend em React, TypeScript, Vite e Tailwind CSS, exibindo estado de travamento, n\'ivel de bateria, rel\'ogio local em \texttt{America/Fortaleza} e hist\'orico filtr\'avel de acessos. A compila\c{c}\~ao est\'atica de ambos os m\'odulos e os testes funcionais das rotas REST em modo simulado foram executados com \^exito.
+\end{abstract}
+
+\noindent\textbf{Palavras-chave:} Internet das Coisas, Fechadura Inteligente, Tuya Cloud API, HMAC-SHA256, TypeScript, React.
+
+\begin{otherlanguage}{english}
+\begin{abstract}
+This paper presents the design, architecture, and initial implementation of \texttt{tuya-lock-dashboard}, a web application for telemetry monitoring and remote actuation of a smart door lock integrated with the Tuya Cloud platform in an academic laboratory at the Federal University of Piau\'i (UFPI). To enable interface and API validation prior to completing mobile app account linking on the Tuya IoT Platform, a service abstraction pattern based on the \texttt{ILockService} interface was adopted, allowing transparent switching via an environment flag between an in-memory mock service (\texttt{USE\_MOCK=true}) and the production Tuya OpenAPI v2.0 client (\texttt{USE\_MOCK=false}) using HMAC-SHA256 request signing. The stack combines a Node.js, TypeScript, and Express backend with a React, TypeScript, Vite, and Tailwind CSS frontend displaying lock state, battery level, local time in \texttt{America/Fortaleza}, and filterable access logs. Static typechecking, production builds for both modules, and functional REST endpoint verification in mock mode were successfully validated.
+\end{abstract}
+\end{otherlanguage}
+
+\section{Introdu\c{c}\~ao}
+
+Sistemas de controle de acesso baseados em Internet das Coisas (IoT) v\^em substituindo mecanismos exclusivamente mec\^anicos em laborat\'orios universit\'arios por oferecerem rastreabilidade de eventos, gerenciamento de permiss\~oes e acionamento remoto. No contexto do projeto \texttt{Fechadura-lab}, implantado na rede do laborat\'orio (\texttt{200.137.163.*}) sob o fuso hor\'ario \texttt{America/Fortaleza}, surgiu a demanda por um painel web dedicado capaz de centralizar o estado da fechadura inteligente, o n\'ivel de bateria e os registros de abertura e fechamento.
+
+Um desafio recorrente no desenvolvimento de aplica\c{c}\~oes acopladas a nuvens IoT propriet\'arias reside na depend\^encia de etapas administrativas externas, como o provisionamento de permiss\~oes de API e o v\'inculo da conta do aplicativo m\'ovel ao projeto na nuvem (\textit{Link Tuya App Account}). Para evitar bloqueios no ciclo de desenvolvimento do backend e da interface web, projetou-se uma arquitetura desacoplada orientada a contratos, na qual a camada de controle HTTP consome uma interface \'unica (\texttt{ILockService}) implementada tanto por um simulador determin\'istico quanto pelo cliente oficial da Tuya Cloud OpenAPI.
+
+As principais contribui\c{c}\~oes deste trabalho s\~ao:
+\begin{enumerate}
+  \item Defini\c{c}\~ao de uma API REST tipada em Node.js/TypeScript com altern\^ancia configur\'avel entre execu\c{c}\~ao simulada e nuvem Tuya;
+  \item Implementa\c{c}\~ao integral do esquema de assinatura criptogr\'afica \texttt{HMAC-SHA256} da Tuya OpenAPI v2.0, incluindo gerenciamento de \textit{token} com renova\c{c}\~ao antecipada;
+  \item Constru\c{c}\~ao de um dashboard web responsivo em React e Tailwind CSS para monitoramento em tempo real e opera\c{c}\~ao remota.
+\end{enumerate}
+
+\section{Arquitetura do Sistema}
+
+A aplica\c{c}\~ao segue o modelo cliente-servidor com separa\c{c}\~ao clara de responsabilidades entre os diret\'orios \texttt{frontend/} e \texttt{backend/}, conforme ilustrado na Figura~\ref{fig:arquitetura}. Em ambiente de desenvolvimento, o servidor Vite atua como \textit{proxy} reverso encaminhando requisi\c{c}\~oes do prefixo \texttt{/api} para o backend Express na porta \texttt{3001}.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  node distance=0.55cm and 0.45cm,
+  box/.style={draw, rounded corners=3pt, fill=blue!5, text width=2.8cm, align=center, font=\scriptsize, minimum height=0.8cm},
+  widebox/.style={draw, rounded corners=3pt, fill=gray!8, text width=6.2cm, align=center, font=\scriptsize, minimum height=0.75cm},
+  arrow/.style={-{Stealth[scale=0.8]}, thick}
+]
+  \node[widebox] (fe) {\textbf{Frontend Web} (React + TypeScript + Tailwind)\\\texttt{StatusCard}, \texttt{AccessLogsTable}, \texttt{lockApi.ts}};
+  \node[widebox, below=of fe] (api) {\textbf{Backend REST} (Node.js + Express + TypeScript)\\\texttt{lockRoutes.ts} (\texttt{/api/health}, \texttt{/api/lock/*})};
+  \node[widebox, below=of api] (iface) {\textbf{Contrato de Servi\c{c}o} (\texttt{ILockService})\\Sele\c{c}\~ao via \texttt{USE\_MOCK} em \texttt{config.ts}};
+  \node[box, below left=0.6cm and -1.35cm of iface, fill=violet!8] (mock) {\textbf{MockLockService}\\\texttt{USE\_MOCK=true}\\Estado em mem\'oria};
+  \node[box, below right=0.6cm and -1.35cm of iface, fill=teal!10] (tuya) {\textbf{TuyaLockService}\\\texttt{USE\_MOCK=false}\\HMAC-SHA256};
+  \node[widebox, below=1.85cm of iface, fill=orange!8] (cloud) {\textbf{Tuya Cloud OpenAPI} (\texttt{https://openapi.tuyaus.com})\\IoT Core \& Smart Lock Open Service};
+
+  \draw[arrow] (fe) -- node[right, font=\tiny] {HTTP JSON (/api)} (api);
+  \draw[arrow] (api) -- (iface);
+  \draw[arrow] (iface.south -| mock.north) -- (mock.north);
+  \draw[arrow] (iface.south -| tuya.north) -- (tuya.north);
+  \draw[arrow] (tuya.south) -- (cloud.north -| tuya.south);
+\end{tikzpicture}
+\caption{Arquitetura desacoplada do sistema \texttt{tuya-lock-dashboard}.}
+\label{fig:arquitetura}
+\end{figure}
+
+\subsection{Camada Backend e Contratos REST}
+
+O n\'ucleo de dados do backend \'e definido em \texttt{src/types/lock.ts}, padronizando as estruturas \texttt{LockStatus}, \texttt{LockLogEntry} e \texttt{LockCommandResult}. A sele\c{c}\~ao da implementa\c{c}\~ao ativa ocorre na inicializa\c{c}\~ao do roteador (\texttt{src/routes/lockRoutes.ts}), instanciando \texttt{MockLockService} quando \texttt{USE\_MOCK=true} ou \texttt{TuyaLockService} quando \texttt{USE\_MOCK=false}. A Tabela~\ref{tab:rotas} resume os cinco \textit{endpoints} expostos sob o prefixo \texttt{/api}.
+
+\begin{table}[t]
+\centering
+\caption{Endpoints REST implementados no backend Express.}
+\label{tab:rotas}
+\scriptsize
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{M\'etodo} & \textbf{Rota} & \textbf{Finalidade} \\
+\midrule
+\texttt{GET} & \texttt{/api/health} & Diagn\'ostico, modo ativo e metadados \\
+\texttt{GET} & \texttt{/api/lock/status} & Estado atual, bateria, sinal e hor\'ario \\
+\texttt{GET} & \texttt{/api/lock/logs} & Hist\'orico de eventos (\texttt{?limit=N}) \\
+\texttt{POST} & \texttt{/api/lock/unlock} & Envia comando de destrancamento \\
+\texttt{POST} & \texttt{/api/lock/lock} & Envia comando de trancamento \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Camada Frontend}
+
+A interface web foi estruturada em componentes funcionais React fortemente tipados:
+\begin{itemize}
+  \item \texttt{App.tsx}: coordena o carregamento inicial paralelo de status e logs, mant\'em um rel\'ogio atualizado a cada segundo no fuso \texttt{America/Fortaleza} via \texttt{Intl.DateTimeFormat} e exibe cart\~oes de bateria, contexto do projeto e mensagens de retorno das opera\c{c}\~oes;
+  \item \texttt{StatusCard.tsx}: apresenta o estado atual (\textit{Fechadura Trancada} ou \textit{Destrancada}), conectividade (\textit{Online}/RSSI), identificadores do hardware e os bot\~oes de acionamento com bloqueio durante requisi\c{c}\~oes em andamento;
+  \item \texttt{AccessLogsTable.tsx}: exibe o hist\'orico tabular com filtragem local por tipo de a\c{c}\~ao (\textit{Todos}, \textit{Destrancamentos}, \textit{Trancamentos}) e atualiza\c{c}\~ao manual.
+\end{itemize}
+
+\section{Integra\c{c}\~ao Tuya Cloud e Seguran\c{c}a}
+
+O projeto na plataforma Tuya Cloud j\'a disp\~oe da infraestrutura de nuvem e das permiss\~oes listadas na Tabela~\ref{tab:tuya}, restando apenas o v\'inculo final da conta do aplicativo m\'ovel ao projeto para libera\c{c}\~ao das chamadas reais ao dispositivo.
+
+\begin{table}[t]
+\centering
+\caption{Par\^ametros do ambiente Tuya Cloud configurados para o laborat\'orio.}
+\label{tab:tuya}
+\scriptsize
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Par\^ametro} & \textbf{Valor Configurado} \\
+\midrule
+Projeto & \texttt{Fechadura-lab} (\texttt{p1795538342884cfemuy}) \\
+Data de cria\c{c}\~ao & \texttt{2026-11-24 13:39:02} \\
+Data Center / Endpoint & Western America (\texttt{https://openapi.tuyaus.com}) \\
+Virtual ID do dispositivo & \texttt{eb1024d8e9fbf9d540tpty} \\
+Endere\c{c}o MAC & \texttt{4c:a9:19:70:3c:d2} \\
+Fuso hor\'ario / Rede & \texttt{America/Fortaleza} / \texttt{200.137.163.*} \\
+APIs autorizadas & IoT Core, Free Basic Resource Pack, \\
+& Authorization Token Management, Smart Lock \\
+& Open Service, Smart Home Basic Service, \\
+& Device Status Notification \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Assinatura Criptogr\'afica HMAC-SHA256}
+
+Toda requisi\c{c}\~ao enviada pelo servi\c{c}o \texttt{TuyaLockService} (\texttt{src/services/tuyaLockService.ts}) implementa o protocolo de assinatura da Tuya OpenAPI v2.0. Primeiramente, calcula-se o resumo criptogr\'afico SHA-256 do corpo da requisi\c{c}\~ao ($B$) e canonicaliza-se a URL ($U$) ordenando alfabeticamente os par\^ametros de consulta. Em seguida, constr\'oi-se a cadeia can\^onica $S_{\text{req}}$:
+\begin{equation}
+  S_{\text{req}} = M \parallel \text{``\textbackslash n''} \parallel \text{SHA256}(B) \parallel \text{``\textbackslash n''} \parallel H \parallel \text{``\textbackslash n''} \parallel U
+\end{equation}
+onde $M$ denota o m\'etodo HTTP em mai\'usculas e $H$ representa eventuais cabe\c{c}alhos assinados. A assinatura final enviada no cabe\c{c}alho \texttt{sign} \'e obtida por:
+\begin{equation}
+  \text{sign} = \text{UPPER}\Big(\text{HMAC-SHA256}\big(K_{\text{sec}}, \; K_{\text{id}} \parallel T_{\text{tok}} \parallel t \parallel \eta \parallel S_{\text{req}}\big)\Big)
+\end{equation}
+sendo $K_{\text{id}}$ e $K_{\text{sec}}$ o \textit{Access ID} e o \textit{Access Secret}, $T_{\text{tok}}$ o \textit{access\_token} (omitido na chamada \texttt{GET /v1.0/token?grant\_type=1}), $t$ o \textit{timestamp} em milissegundos e $\eta$ um \textit{nonce} UUIDv4 sem h\'ifens. O \textit{token} obtido \'e mantido em cache em mem\'oria e renovado automaticamente com margem de seguran\c{c}a de 60 segundos antes da expira\c{c}\~ao.
+
+\subsection{Mapeamento de Telemetria e Comandos}
+
+Para leitura de estado, o m\'etodo \texttt{getStatus()} consulta em paralelo \texttt{/v1.0/iot-03/devices/\{id\}} e \texttt{/status}, interpretando os \textit{Data Points} (DPs) comuns de fechaduras Tuya (\texttt{lock\_motor\_state}, \texttt{closed\_opened}, \texttt{door\_lock\_state}, \texttt{residual\_electricity}, \texttt{battery\_percentage}, \texttt{battery\_state} e \texttt{wifi\_rssi}). O hist\'orico prioriza o servi\c{c}o \texttt{/v1.0/devices/\{id\}/door-lock/open-logs}, realizando \textit{fallback} para \texttt{/v1.0/iot-03/devices/\{id\}/logs}.
+
+No acionamento remoto, \texttt{unlock()} segue o fluxo oficial do \textit{Smart Lock Open Service}: solicita um \textit{ticket} tempor\'ario via \texttt{POST /door-lock/password-ticket} e dispara a abertura sem senha via \texttt{POST /door-lock/password-free/open-door}. J\'a \texttt{lock()} envia o comando \texttt{lock\_motor\_state=false} via IoT Core, podendo ser ajustado conforme o perfil de DPs do modelo espec\'ifico da fechadura.
+
+\subsection{Boas Pr\'aticas de Versionamento de Segredos}
+
+As credenciais reais permanecem restritas ao arquivo local \texttt{backend/.env}, explicitamente exclu\'ido do controle de vers\~ao pelo \texttt{.gitignore}. No reposit\'orio p\'ublico, mant\'em-se apenas o modelo \texttt{backend/.env.example} com marcadores de substitui\c{c}\~ao.
+
+\section{Modo Simulado e Valida\c{c}\~ao}
+
+Enquanto \texttt{USE\_MOCK=true}, a classe \texttt{MockLockService} simula o comportamento operacional da fechadura em mem\'oria, iniciando trancada, com bateria em 87\%, sinal Wi-Fi de $-54$~dBm e seis eventos iniciais distribu\'idos entre biometria, senha PIN, cart\~ao RFID, aplicativo e travamento autom\'atico. Cada comando enviado pelo dashboard atualiza o estado corrente, simula consumo m\'inimo de bateria na abertura e insere um novo registro cronol\'ogico formatado em \texttt{America/Fortaleza}.
+
+\subsection{Verifica\c{c}\~ao T\'ecnica Executada}
+
+Ap\'os a conclus\~ao da implementa\c{c}\~ao e das corre\c{c}\~oes de tipagem (incluindo a declara\c{c}\~ao \texttt{vite/client} em \texttt{frontend/src/vite-env.d.ts}), foram executadas as seguintes verifica\c{c}\~oes:
+\begin{enumerate}
+  \item \textbf{Backend}: execu\c{c}\~ao bem-sucedida de \texttt{tsc --noEmit} e \texttt{tsc}, gerando os artefatos em \texttt{backend/dist/};
+  \item \textbf{Frontend}: execu\c{c}\~ao bem-sucedida de \texttt{tsc -b --noEmit} e \texttt{vite build}, transformando 1579 m\'odulos e gerando o pacote otimizado em \texttt{frontend/dist/};
+  \item \textbf{Teste funcional de API (\textit{smoke test})}: execu\c{c}\~ao do servidor compilado em porta local (\texttt{3199}) em modo \texttt{mock}, confirmando resposta v\'alida em \texttt{/api/health} (\texttt{ok: true}), estado inicial trancado, retorno dos 6 registros iniciais em \texttt{/api/lock/logs} e transi\c{c}\~oes corretas nos endpoints \texttt{POST /api/lock/unlock} e \texttt{POST /api/lock/lock}.
+\end{enumerate}
+
+Ressalta-se que os testes com tr\'afego real para a Tuya Cloud (\texttt{USE\_MOCK=false}) n\~ao foram executados nesta etapa devido \`a pend\^encia de v\'inculo da conta do aplicativo na plataforma Tuya IoT.
+
+\section{Conclus\~ao e Trabalhos Futuros}
+
+O projeto \texttt{tuya-lock-dashboard} estabelece uma base modular, segura e imediatamente oper\'avel para o monitoramento e controle da fechadura do laborat\'orio. O uso da interface \texttt{ILockService} viabilizou a valida\c{c}\~ao completa da API REST e da interface web antes mesmo da integra\c{c}\~ao com o dispositivo f\'isico, reduzindo riscos na etapa de implanta\c{c}\~ao.
+
+Como trabalhos futuros, destacam-se: (i) concluir o v\'inculo da conta Tuya e validar os DPs reais da fechadura com \texttt{USE\_MOCK=false}; (ii) adicionar autentica\c{c}\~ao de usu\'arios (JWT ou OAuth2 institucional) antes de expor o painel na rede do campus; e (iii) persistir o hist\'orico de eventos e auditoria de comandos em banco de dados relacional.
+
+\begin{thebibliography}{9}
+
+\bibitem{tuya-openapi}
+Tuya Developer Platform. \textit{Sign Requests -- Tuya IoT Development Platform (OpenAPI v2.0)}. Dispon\'ivel em: \url{https://developer.tuya.com/en/docs/iot/new-singnature?id=Kbw0q34cs2e5g}.
+
+\bibitem{tuya-smartlock}
+Tuya Developer Platform. \textit{Smart Lock Open Service API Reference}. Dispon\'ivel em: \url{https://developer.tuya.com/en/docs/cloud/}.
+
+\bibitem{react-vite}
+Meta Open Source; VoidZero. \textit{React 18 \& Vite Documentation}. Dispon\'ivel em: \url{https://react.dev/} e \url{https://vite.dev/}.
+
+\bibitem{express-ts}
+OpenJS Foundation; Microsoft. \textit{Express.js \& TypeScript Documentation}. Dispon\'ivel em: \url{https://expressjs.com/} e \url{https://www.typescriptlang.org/}.
+
+\end{thebibliography}
+
+\end{document}
