@@ -1,0 +1,15 @@
+# Dependencies & build artifacts
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Local environment secrets
+.env
+.env.local
+backend/.env
+frontend/.env
+
+# Logs & OS files
+*.log
+.DS_Store
